@@ -1,5 +1,6 @@
 {
   lib,
+  stdenv,
   flutter335,
   python3Packages,
   fetchFromGitHub,
@@ -12,6 +13,8 @@
   yq-go,
   _experimental-update-script-combinators,
   nix-update-script,
+  apple-sdk,
+  darwin,
 }:
 
 flutter335.buildFlutterApplication rec {
@@ -27,6 +30,8 @@ flutter335.buildFlutterApplication rec {
 
   pubspecLock = lib.importJSON ./pubspec.lock.json;
 
+  targetFlutterPlatform = if stdenv.isDarwin then "aarch64-darwin" else "linux";
+
   gitHashes.window_manager = "sha256-WKcNwEOthXj1S2lKlpdhy+r8JZslVqhwY2ywXeTSBEs=";
 
   postPatch = ''
@@ -36,12 +41,27 @@ flutter335.buildFlutterApplication rec {
       --replace-fail "../build/linux/helper" "${passthru.helper}/libexec/helper"
   '';
 
-  nativeBuildInputs = [ removeReferencesTo ];
+  nativeBuildInputs = [
+    removeReferencesTo
+  ]
+  ++ lib.optionals stdenv.isDarwin [
+    darwin.DarwinTools
+    apple-sdk
+    # darwin.apple_sdk.frameworks.Cocoa
+  ];
+
+  # Stops Flutter/Git from complaining about dubious ownership in the Nix store
+  env.GIT_CEILING_DIRECTORIES = "/nix/store";
 
   buildInputs = [
     pcre2
+  ]
+  ++ lib.optionals stdenv.isLinux [
     libnotify
     libappindicator
+  ]
+  ++ lib.optionals stdenv.isDarwin [
+    apple-sdk
   ];
 
   preInstall = ''
@@ -73,7 +93,8 @@ flutter335.buildFlutterApplication rec {
   '';
 
   # Needed for QR scanning to work
-  extraWrapProgramArgs = ''
+  # On Linux, QR scanning requires gnome-screenshot
+  extraWrapProgramArgs = lib.optionalString stdenv.isLinux ''
     --prefix PATH : ${lib.makeBinPath [ gnome-screenshot ]}
   '';
 
@@ -105,9 +126,6 @@ flutter335.buildFlutterApplication rec {
     homepage = "https://github.com/Yubico/yubioath-flutter";
     license = lib.licenses.asl20;
     maintainers = with lib.maintainers; [ lukegb ];
-    platforms = [
-      "x86_64-linux"
-      "aarch64-linux"
-    ];
+    platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
 }
